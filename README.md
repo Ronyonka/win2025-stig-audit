@@ -1,8 +1,8 @@
 # STIG Compliance Checks
 
 This repository contains PowerShell checks for Windows Server 2025 STIG items.
-The checks are organized into category-specific scripts under `scripts/` so you can run the CAT level you need without mixing the whole set into one file.
-The active script for this repo is [`scripts/CAT I/Test-STIGCompliance.ps1`](./scripts/CAT%20I/Test-STIGCompliance.ps1), which runs a series of local validation checks and prints pass/fail results to the console.
+The checks are organized into a flat, category-specific script layout under `scripts/` so you can run the CAT level you need without mixing the whole set into one file.
+The active script for this repo is [`scripts/CAT1.ps1`](./scripts/CAT1.ps1), which runs a series of local validation checks and prints pass/fail results to the console.
 
 ## Requirements
 
@@ -27,7 +27,7 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
 From the repository folder, run the category script you want to validate:
 
 ```powershell
-.\scripts\CAT I\Test-STIGCompliance.ps1
+.\scripts\CAT1.ps1
 ```
 
 The script prints each rule result as `PASS` or `FAIL`, then exits with:
@@ -39,4 +39,4 @@ The script prints each rule result as `PASS` or `FAIL`, then exits with:
 
 - Some checks are specific to domain controllers and will report as not applicable on non-DC systems.
 - Several checks inspect Active Directory, certificate, and file-system permissions, so they should be run on the live target system rather than copied output.
-- The older flat script layout is being phased out in favor of the category-based `scripts/CAT I`, `scripts/CAT II`, and similar folders.
+- The older nested category folder layout has been replaced with a simpler file-per-category approach under `scripts/`.

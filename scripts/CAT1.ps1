@@ -1041,6 +1041,250 @@ else {
 
 # -----------------------------------------------------------------------
 
+# V-278190 | Windows Server 2025 must be running Credential Guard on domain-joined member servers
+
+# -----------------------------------------------------------------------
+
+$computerSystem = Get-CimInstance -ClassName Win32_ComputerSystem -ErrorAction SilentlyContinue
+
+if (-not $computerSystem -or -not $computerSystem.PartOfDomain -or $computerSystem.DomainRole -ne 3) {
+    Write-Result "V-278190" "System is not a domain-joined member server; rule not applicable." $true
+    $passed++
+}
+else {
+    $credentialGuardRunning = $false
+
+    try {
+        $deviceGuard = Get-CimInstance -Namespace "root\Microsoft\Windows\DeviceGuard" -ClassName Win32_DeviceGuard -ErrorAction Stop
+        if ($deviceGuard.SecurityServicesRunning -contains 1) {
+            $credentialGuardRunning = $true
+        }
+    }
+    catch {
+        $credentialGuardRunning = $false
+    }
+
+    if (-not $credentialGuardRunning) {
+        try {
+            $lsaCfgFlags = (Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" -Name "LsaCfgFlags" -ErrorAction Stop).LsaCfgFlags
+            if ($lsaCfgFlags -in 1, 2) {
+                $credentialGuardRunning = $true
+            }
+        }
+        catch {
+            $credentialGuardRunning = $false
+        }
+    }
+
+if ($credentialGuardRunning) {
+        Write-Result "V-278190" "Credential Guard is running on the domain-joined member server." $true
+        $passed++
+    }
+    else {
+        Write-Result "V-278190" "Credential Guard is not running on the domain-joined member server." $false
+        $failed++
+    }
+}
+
+# -----------------------------------------------------------------------
+
+# V-278196 | Windows Server 2025 must prevent local accounts with blank passwords from being used from the network
+
+# -----------------------------------------------------------------------
+
+$regPath = "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa"
+$valueName = "LimitBlankPasswordUse"
+
+try {
+    $currentValue = (Get-ItemProperty -Path $regPath -Name $valueName -ErrorAction Stop).$valueName
+
+    if ($currentValue -eq 1) {
+        Write-Result "V-278196" "Local accounts with blank passwords are prevented from network use." $true
+        $passed++
+    } else {
+        Write-Result "V-278196" "Local accounts with blank passwords can be used from the network (value: $currentValue)." $false
+        $failed++
+    }
+}
+catch {
+    Write-Result "V-278196" "Registry value LimitBlankPasswordUse is missing." $false
+    $failed++
+}
+
+# -----------------------------------------------------------------------
+
+# V-278215 | Windows Server 2025 must not allow anonymous SID/Name translation
+
+# -----------------------------------------------------------------------
+
+$regPath = "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa"
+$valueName = "AllowAnonymousSIDNameTranslation"
+
+try {
+    $currentValue = (Get-ItemProperty -Path $regPath -Name $valueName -ErrorAction Stop).$valueName
+
+    if ($currentValue -eq 0) {
+        Write-Result "V-278215" "Anonymous SID/Name translation is disabled." $true
+        $passed++
+    } else {
+        Write-Result "V-278215" "Anonymous SID/Name translation is enabled (value: $currentValue)." $false
+        $failed++
+    }
+}
+catch {
+    Write-Result "V-278215" "Registry value AllowAnonymousSIDNameTranslation is missing." $false
+    $failed++
+}
+
+# -----------------------------------------------------------------------
+
+# V-278216 | Windows Server 2025 must not allow anonymous enumeration of Security Account Manager (SAM) accounts
+
+# -----------------------------------------------------------------------
+
+$regPath = "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa"
+$valueName = "RestrictAnonymousSAM"
+
+try {
+    $currentValue = (Get-ItemProperty -Path $regPath -Name $valueName -ErrorAction Stop).$valueName
+
+    if ($currentValue -eq 1) {
+        Write-Result "V-278216" "Anonymous SAM account enumeration is disabled." $true
+        $passed++
+    } else {
+        Write-Result "V-278216" "Anonymous SAM account enumeration is enabled (value: $currentValue)." $false
+        $failed++
+    }
+}
+catch {
+    Write-Result "V-278216" "Registry value RestrictAnonymousSAM is missing." $false
+    $failed++
+}
+
+# -----------------------------------------------------------------------
+
+# V-278217 | Windows Server 2025 must not allow anonymous enumeration of shares
+
+# -----------------------------------------------------------------------
+
+$regPath = "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa"
+$valueName = "RestrictAnonymous"
+
+try {
+    $currentValue = (Get-ItemProperty -Path $regPath -Name $valueName -ErrorAction Stop).$valueName
+
+    if ($currentValue -eq 1) {
+        Write-Result "V-278217" "Anonymous share enumeration is disabled." $true
+        $passed++
+    } else {
+        Write-Result "V-278217" "Anonymous share enumeration is enabled (value: $currentValue)." $false
+        $failed++
+    }
+}
+catch {
+    Write-Result "V-278217" "Registry value RestrictAnonymous is missing." $false
+    $failed++
+}
+
+# -----------------------------------------------------------------------
+
+# V-278225 | Windows Server 2025 LAN Manager authentication level must be configured to send NTLMv2 response only and to refuse LM and NTLM
+
+# -----------------------------------------------------------------------
+
+$regPath = "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa"
+$valueName = "LmCompatibilityLevel"
+
+try {
+    $currentValue = (Get-ItemProperty -Path $regPath -Name $valueName -ErrorAction Stop).$valueName
+
+    if ($currentValue -eq 5) {
+        Write-Result "V-278225" "LAN Manager authentication level is configured to send NTLMv2 response only and refuse LM and NTLM." $true
+        $passed++
+    } else {
+        Write-Result "V-278225" "LAN Manager authentication level is not configured correctly (value: $currentValue)." $false
+        $failed++
+    }
+}
+catch {
+    Write-Result "V-278225" "Registry value LmCompatibilityLevel is missing." $false
+    $failed++
+}
+
+# -----------------------------------------------------------------------
+
+# V-278246 | The Windows Server 2025 "Create a token object" user right must not be assigned to any groups or accounts
+
+# -----------------------------------------------------------------------
+
+$secpolFile = Join-Path $env:TEMP "secpol_v278246.cfg"
+& secedit /export /cfg $secpolFile /quiet | Out-Null
+$secpolContent = Get-Content $secpolFile -ErrorAction SilentlyContinue
+Remove-Item $secpolFile -Force -ErrorAction SilentlyContinue
+
+$setting = $secpolContent | Where-Object { $_ -match '^SeCreateTokenPrivilege\s*=' }
+$value = if ($setting -match '=\s*(.*)$') { $Matches[1].Trim() } else { $null }
+
+if ([string]::IsNullOrWhiteSpace($value)) {
+    Write-Result "V-278246" '"Create a token object" user right is not assigned to any groups or accounts.' $true
+    $passed++
+} else {
+    Write-Result "V-278246" "Create a token object user right is assigned (value: $value)." $false
+    $failed++
+}
+
+# -----------------------------------------------------------------------
+
+# V-278250 | The Windows Server 2025 "Debug programs" user right must only be assigned to the Administrators group
+
+# -----------------------------------------------------------------------
+
+$secpolFile = Join-Path $env:TEMP "secpol_v278250.cfg"
+& secedit /export /cfg $secpolFile /quiet | Out-Null
+$secpolContent = Get-Content $secpolFile -ErrorAction SilentlyContinue
+Remove-Item $secpolFile -Force -ErrorAction SilentlyContinue
+
+$setting = $secpolContent | Where-Object { $_ -match '^SeDebugPrivilege\s*=' }
+$value = if ($setting -match '=\s*(.*)$') { $Matches[1].Trim() } else { $null }
+
+if ($value -eq "Administrators") {
+    Write-Result "V-278250" '"Debug programs" user right is assigned only to the Administrators group.' $true
+    $passed++
+} elseif ([string]::IsNullOrWhiteSpace($value)) {
+    Write-Result "V-278250" '"Debug programs" user right is not assigned.' $false
+    $failed++
+} else {
+    Write-Result "V-278250" "\"Debug programs\" user right is assigned to an unauthorized account or group (value: $value)." $false
+    $failed++
+}
+
+# -----------------------------------------------------------------------
+
+# V-278219 | Windows Server 2025 must restrict anonymous access to Named Pipes and Shares
+
+# -----------------------------------------------------------------------
+
+$regPath = "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters"
+$valueName = "RestrictNullSessAccess"
+
+try {
+    $currentValue = (Get-ItemProperty -Path $regPath -Name $valueName -ErrorAction Stop).$valueName
+
+    if ($currentValue -eq 1) {
+        Write-Result "V-278219" "Anonymous access to Named Pipes and Shares is restricted." $true
+        $passed++
+    } else {
+        Write-Result "V-278219" "Anonymous access to Named Pipes and Shares is not restricted (value: $currentValue)." $false
+        $failed++
+    }
+}
+catch {
+    Write-Result "V-278219" "Registry value RestrictNullSessAccess is missing." $false
+    $failed++
+}
+
+# -----------------------------------------------------------------------
+
 # Summary
 
 # -----------------------------------------------------------------------
