@@ -325,6 +325,56 @@ else {
 
 # -----------------------------------------------------------------------
 
+# V-278177 | Windows Server 2025 must only allow administrators responsible for the member server or stand-alone or nondomain-joined system to have Administrator rights on the system
+
+# -----------------------------------------------------------------------
+
+$computerSystem = Get-CimInstance -ClassName Win32_ComputerSystem -ErrorAction SilentlyContinue
+
+if ($computerSystem -and $computerSystem.DomainRole -in 4, 5) {
+    Write-Result "V-278177" "System is a domain controller; rule not applicable." $true
+    $passed++
+}
+else {
+    $allowedMembers = @(
+        "Administrator",
+        "Domain Admins",
+        "Enterprise Admins"
+    )
+
+    try {
+        $adminMembers = Get-LocalGroupMember -Group "Administrators" -ErrorAction Stop
+    }
+    catch {
+        Write-Result "V-278177" "Unable to enumerate the Administrators group." $false
+        $failed++
+        $adminMembers = @()
+    }
+
+    $findings = foreach ($member in $adminMembers) {
+        $simpleName = ($member.Name -replace '^.*\\', '')
+
+        if ($simpleName -notin $allowedMembers) {
+            [PSCustomObject]@{
+                Name = $member.Name
+                SID  = $member.SID.Value
+            }
+        }
+    }
+
+    if ($findings) {
+        Write-Result "V-278177" "Administrators group contains unauthorized members." $false
+        $findings | Sort-Object Name | Format-Table -AutoSize
+        $failed++
+    }
+    else {
+        Write-Result "V-278177" "Administrators group is restricted to member server or standalone administrators." $true
+        $passed++
+    }
+}
+
+# -----------------------------------------------------------------------
+
 # V-278138 | Windows Server 2025 permissions on the Active Directory data files must only allow system administrators (SAs) access
 
 # -----------------------------------------------------------------------
